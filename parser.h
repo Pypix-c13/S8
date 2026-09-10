@@ -326,3 +326,67 @@ void add_symbol_child(Symbol *parent, Symbol *children) {
     while(c->next != NULL) c = c->next;
     c->next = children;
 }
+
+// ==========================================
+//                  Function
+// ==========================================
+
+typedef struct Parameter {
+    char *name;
+    int8_t value;
+    struct Parameter *next;
+} Parameter;
+
+typedef struct Function {
+    char *name;
+    Parameter *param;
+    size_t param_count;
+    struct Function *next;
+} Function;
+
+Parameter *new_param(char *name) {
+    Parameter *param = (Parameter*)malloc(sizeof(Parameter));
+    param->name = name;
+    param->value = 0;
+    param->next = NULL;
+    return param;
+}
+
+Function *add_function(char *name) {
+    Function *func = (Function*)malloc(sizeof(Function));
+    func->name = name;
+    func->param = NULL;
+    func->param_count = 0;
+    func->next = NULL;
+    return func;
+}
+
+void add_function(Function *function, Parameter *param) {
+    if(function->param == NULL) {
+        function->param = param;
+        function->param_count++;
+        return;
+    }
+
+    Parameter *current = function->param;
+    while(current->next != NULL) current = current->next;
+    current->next = param;
+    function->param_count++;
+}
+
+void bind_arguments(Function *function, int8_t *arguments, size_t count) {
+    Parameter *current = function->param;
+    for(size_t i = 0; i < count && current != NULL; i++) {
+        current->value = arguments[i];
+        current = current->next;
+    }
+}
+
+Parameter *lookup_parameter(Function *function, char *name) {
+    Parameter *current = function->param;
+    while(current != NULL) {
+        if(strcmp(current->name, name) == 0) return current;
+        current = current->next;
+    }
+    return NULL;
+}

@@ -72,3 +72,83 @@ ASTNode *parse_struct(Parser *p) {
     consume(p, TYPE_RBRACE);
     return node;
 }
+
+void parse_param(Parser *p) {
+    match(p, TYPE_INT);
+    consume(p, TYPE_INT);
+
+    Token *name = current_t(p);
+    consume(p, TYPE_ID);
+    new_param(name->value);
+
+    if(match(p, TYPE_COMMA)) {
+        match(p, TYPE_INT);
+        consume(p, TYPE_INT);
+
+        Token *name = current_t(p);
+        consume(p, TYPE_ID);
+        new_param(name->value);
+    }
+}
+
+void parse_body(Parser *p) {
+    while(!match(p, TYPE_RBRACE)) {
+        switch(current_t(p)->type) {
+            case TYPE_INT:
+                parse_int(p);
+                break;
+            case TYPE_RETURN:
+                parse_return(p);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void *parse_function(Parser *p) {
+    match(p, TYPE_FUNCTION);
+    consume(p, TYPE_FUNCTION);
+
+    Token *current = current_t(p);
+    consume(p, TYPE_ID);
+
+    match(p, TYPE_LPAREN);
+    consume(p, TYPE_LPAREN);
+
+    parse_param(p);
+
+    match(p, TYPE_RPAREN);
+    consume(p, TYPE_RPAREN);
+
+    match(p, TYPE_LBRACE);
+    consume(p, TYPE_RBRACE);
+
+    parse_body(p);
+
+    match(p, TYPE_RBRACE);
+    consume(p, TYPE_RBRACE);
+}
+
+void parse_argument(Parser *p) {
+    parse_expression(p, 1);
+    if(match(p, TYPE_COMMA)) {
+        parse_expression(p, 1);
+    }
+}
+
+void parse_function_call(Parser *p) {
+    Token *current = current_t(p);
+    consume(p, TYPE_ID);
+
+    match(p, TYPE_LPAREN);
+    consume(p, TYPE_LPAREN);
+
+    parse_argument(p);
+
+    match(p, TYPE_RPAREN);
+    consume(p, TYPE_RPAREN);
+    
+    match(p, TYPE_SEMICOLON);
+    consume(p, TYPE_SEMICOLON);
+}
