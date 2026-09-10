@@ -1,0 +1,25 @@
+Syntax:
+- int
+- func
+- return
+- struct
+
+Operators:
+- +
+- -
+- /
+- *
+- &
+- |
+- ~
+- ^
+- >>
+- <<
+
+Symbols:
+- {}
+- ()
+- ;
+- .
+- ,
+- =
