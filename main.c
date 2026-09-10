@@ -8,9 +8,11 @@
 
 static char *dup_string(const char *source) {
     if (!source) return NULL;
+
     size_t length = strlen(source);
     char *copy = (char*)malloc(length + 1);
     if (!copy) return NULL;
+
     memcpy(copy, source, length + 1);
     return copy;
 }
@@ -44,6 +46,7 @@ typedef struct Vector {
 Token *token_init(void) {
     Token *tokens = (Token*)malloc(sizeof(Token));
     if (!tokens) return NULL;
+
     tokens->type = TYPE_UNKNOWN;
     tokens->value = NULL;
     return tokens;
@@ -52,12 +55,15 @@ Token *token_init(void) {
 Token *addToken(TokenType type, const char *value) {
     Token *tokens = token_init();
     if (!tokens) return NULL;
+
     tokens->type = type;
     tokens->value = dup_string(value);
+
     if (!tokens->value) {
         free(tokens);
         return NULL;
     }
+
     return tokens;
 }
 
@@ -68,53 +74,72 @@ const Vector keylist[] = {
     {";", TYPE_SEMICOLON}, {".", TYPE_DOT}, {"=", TYPE_EQUAL},
     {"+", TYPE_PLUS}, {"-", TYPE_MIN}, {"*", TYPE_MUL},
     {"/", TYPE_DIV}, {"~", TYPE_UNARY}, {"&", TYPE_BITWISE_AND},
-    {"|", TYPE_BITWISE_OR}, {"^", TYPE_BITWISE_XOR}, {"<<", TYPE_LSHIFT},
-    {">>", TYPE_RSHIFT}, {NULL, TYPE_UNKNOWN}
+    {"|", TYPE_BITWISE_OR}, {"^", TYPE_BITWISE_XOR},
+    {"<<", TYPE_LSHIFT}, {">>", TYPE_RSHIFT},
+    {NULL, TYPE_UNKNOWN}
 };
 
 Token *isNumber(Lexer *lexer, Token *tokens) {
     size_t start = lexer->cursor;
-    while (isdigit((unsigned char)lexer->source[lexer->cursor])) lexer->cursor++;
+
+    while (isdigit((unsigned char)lexer->source[lexer->cursor]))
+        lexer->cursor++;
+
     size_t length = lexer->cursor - start;
 
     tokens->type = TYPE_INT_LITERAL;
     tokens->value = (char*)malloc(length + 1);
+
     if (!tokens->value) {
         free(tokens);
         return NULL;
     }
+
     memcpy(tokens->value, &lexer->source[start], length);
     tokens->value[length] = '\0';
+
     return tokens;
 }
 
 Token *isHex(Lexer *lexer, Token *tokens) {
     size_t start = lexer->cursor;
     lexer->cursor += 2;
-    while (isxdigit((unsigned char)lexer->source[lexer->cursor])) lexer->cursor++;
+
+    while (isxdigit((unsigned char)lexer->source[lexer->cursor]))
+        lexer->cursor++;
+
     size_t length = lexer->cursor - start;
 
     tokens->type = TYPE_HEX_LITERAL;
     tokens->value = (char*)malloc(length + 1);
+
     if (!tokens->value) {
         free(tokens);
         return NULL;
     }
+
     memcpy(tokens->value, &lexer->source[start], length);
     tokens->value[length] = '\0';
+
     return tokens;
 }
 
 Token *isID(Lexer *lexer, Token *tokens) {
     size_t start = lexer->cursor;
-    while (isalnum((unsigned char)lexer->source[lexer->cursor]) || lexer->source[lexer->cursor] == '_') lexer->cursor++;
+
+    while (isalnum((unsigned char)lexer->source[lexer->cursor]) ||
+           lexer->source[lexer->cursor] == '_')
+        lexer->cursor++;
+
     size_t length = lexer->cursor - start;
 
     tokens->value = (char*)malloc(length + 1);
+
     if (!tokens->value) {
         free(tokens);
         return NULL;
     }
+
     memcpy(tokens->value, &lexer->source[start], length);
     tokens->value[length] = '\0';
     tokens->type = TYPE_ID;
@@ -125,6 +150,7 @@ Token *isID(Lexer *lexer, Token *tokens) {
             break;
         }
     }
+
     return tokens;
 }
 
@@ -134,10 +160,16 @@ void isIgnore(Lexer *lexer) {
             lexer->cursor++;
             continue;
         }
-        if (lexer->source[lexer->cursor] == '/' && lexer->source[lexer->cursor + 1] == '/') {
-            while (lexer->source[lexer->cursor] != '\n' && lexer->source[lexer->cursor] != '\0') lexer->cursor++;
+
+        if (lexer->source[lexer->cursor] == '/' &&
+            lexer->source[lexer->cursor + 1] == '/') {
+            while (lexer->source[lexer->cursor] != '\n' &&
+                   lexer->source[lexer->cursor] != '\0')
+                lexer->cursor++;
+
             continue;
         }
+
         break;
     }
 }
@@ -147,6 +179,7 @@ Token *get_next_token(Lexer *lexer) {
     if (!tokens) return NULL;
 
     isIgnore(lexer);
+
     if (lexer->source[lexer->cursor] == '\0') {
         tokens->type = TYPE_EOF;
         tokens->value = dup_string("EOF");
@@ -154,54 +187,68 @@ Token *get_next_token(Lexer *lexer) {
     }
 
     if (lexer->source[lexer->cursor] == '0' &&
-       (lexer->source[lexer->cursor + 1] == 'x' || lexer->source[lexer->cursor + 1] == 'X')) {
+        (lexer->source[lexer->cursor + 1] == 'x' ||
+         lexer->source[lexer->cursor + 1] == 'X'))
         return isHex(lexer, tokens);
-    }
 
-    if (isdigit((unsigned char)lexer->source[lexer->cursor])) return isNumber(lexer, tokens);
-    if (isalpha((unsigned char)lexer->source[lexer->cursor]) || lexer->source[lexer->cursor] == '_') return isID(lexer, tokens);
+    if (isdigit((unsigned char)lexer->source[lexer->cursor]))
+        return isNumber(lexer, tokens);
+
+    if (isalpha((unsigned char)lexer->source[lexer->cursor]) ||
+        lexer->source[lexer->cursor] == '_')
+        return isID(lexer, tokens);
 
     for (size_t i = 0; keylist[i].keyword != NULL; i++) {
         size_t length = strlen(keylist[i].keyword);
-        if (strncmp(&lexer->source[lexer->cursor], keylist[i].keyword, length) == 0) {
+
+        if (strncmp(&lexer->source[lexer->cursor],
+                    keylist[i].keyword, length) == 0) {
             lexer->cursor += length;
             tokens->type = keylist[i].type;
             tokens->value = (char*)malloc(length + 1);
+
             if (!tokens->value) {
                 free(tokens);
                 return NULL;
             }
+
             memcpy(tokens->value, keylist[i].keyword, length);
             tokens->value[length] = '\0';
+
             return tokens;
         }
     }
 
     tokens->type = TYPE_UNKNOWN;
     tokens->value = (char*)malloc(2);
+
     if (tokens->value) {
         tokens->value[0] = lexer->source[lexer->cursor];
         tokens->value[1] = '\0';
     }
+
     lexer->cursor++;
     return tokens;
 }
 
 int8_t convertInto8bit(const char *source) {
     if (!source) return 0;
+
     char *endptr;
     int base = 10;
-    if (source[0] == '0' && (source[1] == 'x' || source[1] == 'X')) base = 16;
+
+    if (source[0] == '0' &&
+        (source[1] == 'x' || source[1] == 'X'))
+        base = 16;
 
     long val = strtol(source, &endptr, base);
     if (*endptr != '\0') return 0;
     if (val < INT8_MIN || val > INT8_MAX) return 0;
+
     return (int8_t)val;
 }
 
-// ==========================================
-//               Parser Builder
-// ==========================================
+/* Parser Builder */
 
 typedef enum ASTNodeType {
     AST_ROOT, AST_NODE, AST_PARENT, AST_CHILDREN,
@@ -232,6 +279,7 @@ typedef struct Parser {
 ASTNode *ast_root(void) {
     ASTNode *root = (ASTNode*)malloc(sizeof(ASTNode));
     if (!root) return NULL;
+
     root->type = AST_ROOT;
     root->value = NULL;
     root->op = TYPE_UNKNOWN;
@@ -241,25 +289,33 @@ ASTNode *ast_root(void) {
     root->parent = NULL;
     root->children = NULL;
     root->node_count = 0;
+
     return root;
 }
 
 ASTNode *ast_node(ASTNode *parent) {
     ASTNode *node = ast_root();
     if (!node) return NULL;
+
     node->type = AST_NODE;
     node->parent = parent;
 
     if (parent) {
-        ASTNode **new_children = (ASTNode**)realloc(parent->children, sizeof(ASTNode*) * (parent->node_count + 1));
+        ASTNode **new_children = (ASTNode**)realloc(
+            parent->children,
+            sizeof(ASTNode*) * (parent->node_count + 1)
+        );
+
         if (!new_children) {
             free(node);
             return NULL;
         }
+
         parent->children = new_children;
         parent->children[parent->node_count] = node;
         parent->node_count++;
     }
+
     return node;
 }
 
@@ -277,11 +333,11 @@ ASTNode *ast_children(ASTNode *parent) {
 
 void free_ast(ASTNode *buffer) {
     if (!buffer) return;
-    for (size_t i = 0; i < buffer->node_count; i++) {
-        free_ast(buffer->children[i]);
-    }
+    for (size_t i = 0; i < buffer->node_count; i++) free_ast(buffer->children[i]);
+
     if (buffer->left) free_ast(buffer->left);
     if (buffer->right) free_ast(buffer->right);
+
     free(buffer->value);
     free(buffer->children);
     free(buffer);
@@ -300,12 +356,11 @@ int match(Parser *p, TokenType type) {
         p->current++;
         return 1;
     }
+
     return 0;
 }
 
-// ==========================================
-//                SymbolTable
-// ==========================================
+/* SymbolTable */
 
 typedef struct SymbolNode {
     char *label;
@@ -327,6 +382,7 @@ void add_variable(SymbolTable *table, const char *label, int8_t value) {
     if (!table) return;
     SymbolNode *node = (SymbolNode*)malloc(sizeof(SymbolNode));
     if (!node) return;
+
     node->label = dup_string(label);
     node->value = value;
     node->next = table->head;
@@ -336,23 +392,24 @@ void add_variable(SymbolTable *table, const char *label, int8_t value) {
 SymbolNode *lookup(SymbolTable *table, const char *label) {
     if (!table) return NULL;
     SymbolNode *current = table->head;
+
     while (current != NULL) {
         if (strcmp(current->label, label) == 0) return current;
         current = current->next;
     }
+
     return NULL;
 }
 
 bool update_var(SymbolTable *table, const char *label, int8_t value) {
     SymbolNode *symbol = lookup(table, label);
     if (symbol == NULL) return false;
+
     symbol->value = value;
     return true;
 }
 
-// ==========================================
-//                Expression
-// ==========================================
+/* Expression */
 
 typedef struct StateLevel {
     TokenType type;
@@ -361,9 +418,16 @@ typedef struct StateLevel {
 } StateLevel;
 
 const StateLevel levels[] = {
-    {TYPE_BITWISE_OR, 1, "|"}, {TYPE_BITWISE_XOR, 2, "^"}, {TYPE_BITWISE_AND, 3, "&"},
-    {TYPE_LSHIFT, 4, "<<"}, {TYPE_RSHIFT, 4, ">>"}, {TYPE_PLUS, 5, "+"},
-    {TYPE_MIN, 5, "-"}, {TYPE_MUL, 6, "*"}, {TYPE_DIV, 6, "/"}, {TYPE_UNARY, 7, "~"}
+    {TYPE_BITWISE_OR, 1, "|"},
+    {TYPE_BITWISE_XOR, 2, "^"},
+    {TYPE_BITWISE_AND, 3, "&"},
+    {TYPE_LSHIFT, 4, "<<"},
+    {TYPE_RSHIFT, 4, ">>"},
+    {TYPE_PLUS, 5, "+"},
+    {TYPE_MIN, 5, "-"},
+    {TYPE_MUL, 6, "*"},
+    {TYPE_DIV, 6, "/"},
+    {TYPE_UNARY, 7, "~"}
 };
 
 int getLevel(TokenType type) {
@@ -376,66 +440,85 @@ int getLevel(TokenType type) {
 ASTNode *create_binary_node(Token *tokens, ASTNode *left, ASTNode *right) {
     ASTNode *node = ast_root();
     if (!node) return NULL;
+
     node->type = AST_BINARY;
     node->value = dup_string(tokens->value);
     node->op = tokens->type;
     node->left = left;
     node->right = right;
+
     return node;
 }
 
 ASTNode *create_unary_node(Token *tokens, ASTNode *operand) {
     ASTNode *node = ast_root();
     if (!node) return NULL;
+
     node->type = AST_UNARY;
     node->value = dup_string(tokens->value);
+    node->op = tokens->type;
     node->left = operand;
+
     return node;
 }
 
 ASTNode *create_value_node(Token *tokens) {
     ASTNode *node = ast_root();
     if (!node) return NULL;
+
     node->type = AST_LITERAL;
     node->value = dup_string(tokens->value);
+
     return node;
 }
 
 ASTNode *parse_primary(Parser *p) {
     Token *tokens = current_t(p);
+
     if (tokens->type == TYPE_UNARY) {
         p->current++;
+
         ASTNode *operand = parse_primary(p);
         if (operand == NULL) return NULL;
+
         return create_unary_node(tokens, operand);
     }
 
-    if (tokens->type == TYPE_INT_LITERAL || tokens->type == TYPE_HEX_LITERAL || tokens->type == TYPE_ID) {
+    if (tokens->type == TYPE_INT_LITERAL ||
+        tokens->type == TYPE_HEX_LITERAL ||
+        tokens->type == TYPE_ID) {
         p->current++;
         return create_value_node(tokens);
     }
+
     return NULL;
 }
 
 ASTNode *parse_expression(Parser *p, int min_level) {
     ASTNode *left = parse_primary(p);
+    if (!left) return NULL;
 
     while (1) {
         Token *op = current_t(p);
         int level = getLevel(op->type);
-        if (level < min_level) break;
 
+        if (level < min_level) break;
         p->current++;
+
         ASTNode *right = parse_expression(p, level + 1);
         if (right == NULL) return NULL;
+
         left = create_binary_node(op, left, right);
+        if (!left) return NULL;
     }
+
     return left;
 }
 
 int8_t evaluate(ASTNode *node) {
-    if (node == NULL) return 0;
+    if (!node) return 0;
     if (node->type == AST_LITERAL) return convertInto8bit(node->value);
+    if (node->op == TYPE_UNARY) return ~evaluate(node->left);
 
     int8_t left = evaluate(node->left);
     int8_t right = evaluate(node->right);
@@ -444,20 +527,17 @@ int8_t evaluate(ASTNode *node) {
         case TYPE_PLUS: return left + right;
         case TYPE_MIN: return left - right;
         case TYPE_MUL: return left * right;
-        case TYPE_DIV: return (right == 0) ? 0 : (left / right);
+        case TYPE_DIV: return (right == 0) ? 0 : left / right;
         case TYPE_BITWISE_AND: return left & right;
         case TYPE_BITWISE_OR: return left | right;
         case TYPE_BITWISE_XOR: return left ^ right;
-        case TYPE_UNARY: return ~left;
         case TYPE_LSHIFT: return left << right;
         case TYPE_RSHIFT: return left >> right;
         default: return 0;
     }
 }
 
-// ==========================================
-//                   Struct
-// ==========================================
+/* Struct */
 
 typedef struct Symbol {
     char *name;
@@ -470,41 +550,45 @@ typedef struct Symbol {
 } Symbol;
 
 Symbol *root_symbol(void) {
-    Symbol *sym = (Symbol *)malloc(sizeof(Symbol));
+    Symbol *sym = (Symbol*)malloc(sizeof(Symbol));
     if (!sym) return NULL;
+
     sym->name = NULL;
     sym->size = 0;
     sym->offset = 0;
     sym->parent = NULL;
     sym->children = NULL;
     sym->next = NULL;
+
     return sym;
 }
 
 Symbol *new_symbol(char *name, int8_t size, int8_t offset) {
     Symbol *symbol = root_symbol();
     if (!symbol) return NULL;
+
     symbol->name = dup_string(name);
     symbol->size = size;
     symbol->offset = offset;
+
     return symbol;
 }
 
 void add_symbol_child(Symbol *parent, Symbol *children) {
     if (!parent || !children) return;
     children->parent = parent;
+
     if (parent->children == NULL) {
         parent->children = children;
         return;
     }
+
     Symbol *c = parent->children;
     while (c->next != NULL) c = c->next;
     c->next = children;
 }
 
-// ==========================================
-//                  Function
-// ==========================================
+/* Function */
 
 typedef struct Parameter {
     char *name;
@@ -522,19 +606,23 @@ typedef struct Function {
 Parameter *new_param(char *name) {
     Parameter *param = (Parameter*)malloc(sizeof(Parameter));
     if (!param) return NULL;
+
     param->name = dup_string(name);
     param->value = 0;
     param->next = NULL;
+
     return param;
 }
 
 Function *add_function(char *name) {
     Function *func = (Function*)malloc(sizeof(Function));
     if (!func) return NULL;
+
     func->name = dup_string(name);
     func->param = NULL;
     func->param_count = 0;
     func->next = NULL;
+
     return func;
 }
 
@@ -545,8 +633,10 @@ void add_parameter(Function *function, Parameter *param) {
         function->param_count++;
         return;
     }
+
     Parameter *current = function->param;
     while (current->next != NULL) current = current->next;
+
     current->next = param;
     function->param_count++;
 }
@@ -554,6 +644,7 @@ void add_parameter(Function *function, Parameter *param) {
 void bind_arguments(Function *function, int8_t *arguments, size_t count) {
     if (!function) return;
     Parameter *current = function->param;
+
     for (size_t i = 0; i < count && current != NULL; i++) {
         current->value = arguments[i];
         current = current->next;
@@ -563,20 +654,26 @@ void bind_arguments(Function *function, int8_t *arguments, size_t count) {
 Parameter *lookup_parameter(Function *function, char *name) {
     if (!function || !name) return NULL;
     Parameter *current = function->param;
+
     while (current != NULL) {
         if (strcmp(current->name, name) == 0) return current;
         current = current->next;
     }
+
     return NULL;
 }
 
 ASTNode *parse_int(Parser *p) {
     consume(p, TYPE_INT);
+
     Token *id = current_t(p);
     if (id->type != TYPE_ID) return NULL;
+
     p->current++;
 
     ASTNode *node = ast_root();
+    if (!node) return NULL;
+
     node->type = AST_VAR;
     node->value = dup_string(id->value);
 
@@ -587,49 +684,97 @@ ASTNode *parse_int(Parser *p) {
 
     if (current_t(p)->type == TYPE_EQUAL) {
         p->current++;
+
         ASTNode *expr = parse_expression(p, 1);
-        if (expr == NULL) return NULL;
+        if (!expr) {
+            free_ast(node);
+            return NULL;
+        }
+
         node->left = expr;
         consume(p, TYPE_SEMICOLON);
+
         return node;
     }
+
+    free_ast(node);
     return NULL;
 }
 
 ASTNode *parse_return(Parser *p) {
     consume(p, TYPE_RETURN);
     ASTNode *node = ast_root();
+
+    if (!node) return NULL;
     node->type = AST_RETURN;
 
     ASTNode *expr = parse_expression(p, 1);
-    if (expr == NULL) return NULL;
-    node->left = expr;
+    if (!expr) {
+        free_ast(node);
+        return NULL;
+    }
 
+    node->left = expr;
     consume(p, TYPE_SEMICOLON);
+
     return node;
 }
 
 ASTNode *parse_struct(Parser *p) {
     consume(p, TYPE_STRUCT);
     Token *id = current_t(p);
+
     if (id->type != TYPE_ID) return NULL;
     p->current++;
 
     ASTNode *node = ast_root();
+    if (!node) return NULL;
+
     node->type = AST_STRUCT;
     node->value = dup_string(id->value);
 
-    consume(p, TYPE_LBRACE);
-    while (current_t(p)->type != TYPE_RBRACE) {
-        if (current_t(p)->type == TYPE_INT) {
-            ASTNode *member = parse_int(p);
-            if (member == NULL) return NULL;
-            ast_node(node);
-            continue;
-        }
+    if (!match(p, TYPE_LBRACE)) {
+        free_ast(node);
         return NULL;
     }
-    consume(p, TYPE_RBRACE);
+
+    while (current_t(p)->type != TYPE_RBRACE &&
+           current_t(p)->type != TYPE_EOF) {
+        if (current_t(p)->type == TYPE_INT) {
+            ASTNode *member = parse_int(p);
+            if (!member) {
+                free_ast(node);
+                return NULL;
+            }
+
+            member->parent = node;
+            ASTNode **new_children = (ASTNode**)realloc(
+                node->children,
+                sizeof(ASTNode*) * (node->node_count + 1)
+            );
+
+            if (!new_children) {
+                free_ast(member);
+                free_ast(node);
+                return NULL;
+            }
+
+            node->children = new_children;
+            node->children[node->node_count] = member;
+            node->node_count++;
+
+            continue;
+        }
+
+        free_ast(node);
+        return NULL;
+    }
+
+    if (!match(p, TYPE_RBRACE)) {
+        free_ast(node);
+        return NULL;
+    }
+
     return node;
 }
 
@@ -639,34 +784,45 @@ Parameter *parse_param(Parser *p) {
 
     Token *name = current_t(p);
     if (name->type != TYPE_ID) return NULL;
-    p->current++;
 
+    p->current++;
     return new_param(name->value);
 }
 
 void parse_body(Parser *p) {
-    while (current_t(p)->type != TYPE_RBRACE && current_t(p)->type != TYPE_EOF) {
+    while (current_t(p)->type != TYPE_RBRACE &&
+           current_t(p)->type != TYPE_EOF) {
         switch (current_t(p)->type) {
-            case TYPE_INT: parse_int(p); break;
-            case TYPE_RETURN: parse_return(p); break;
-            default: p->current++; break;
+            case TYPE_INT:
+                parse_int(p);
+                break;
+
+            case TYPE_RETURN:
+                parse_return(p);
+                break;
+
+            default:
+                p->current++;
+                break;
         }
     }
 }
 
 Function *parse_function(Parser *p) {
     if (!match(p, TYPE_FUNCTION)) return NULL;
+
     Token *name = current_t(p);
     if (name->type != TYPE_ID) return NULL;
     p->current++;
 
     Function *function = add_function(name->value);
+    if (!function) return NULL;
     if (!match(p, TYPE_LPAREN)) return NULL;
 
     if (current_t(p)->type != TYPE_RPAREN) {
         while (true) {
             Parameter *param = parse_param(p);
-            if (param == NULL) return NULL;
+            if (!param) return NULL;
             add_parameter(function, param);
             if (!match(p, TYPE_COMMA)) break;
         }
@@ -689,10 +845,72 @@ void parse_argument(Parser *p) {
 void parse_function_call(Parser *p) {
     consume(p, TYPE_ID);
     consume(p, TYPE_LPAREN);
+
     parse_argument(p);
+
     consume(p, TYPE_RPAREN);
     consume(p, TYPE_SEMICOLON);
 }
+
+ASTNode *parse_program(Parser *p) {
+    ASTNode *root = ast_root();
+    if (!root) return NULL;
+
+    while (current_t(p)->type != TYPE_EOF) {
+        ASTNode *node = NULL;
+
+        switch (current_t(p)->type) {
+            case TYPE_INT:
+                node = parse_int(p);
+                break;
+
+            case TYPE_STRUCT:
+                node = parse_struct(p);
+                break;
+
+            case TYPE_RETURN:
+                node = parse_return(p);
+                break;
+
+            case TYPE_FUNCTION:
+                if (!parse_function(p)) {
+                    free_ast(root);
+                    return NULL;
+                }
+                break;
+
+            case TYPE_ID:
+                parse_function_call(p);
+                break;
+
+            default:
+                free_ast(root);
+                return NULL;
+        }
+
+        if (node) {
+            node->parent = root;
+            ASTNode **new_children = (ASTNode**)realloc(
+                root->children,
+                sizeof(ASTNode*) * (root->node_count + 1)
+            );
+
+            if (!new_children) {
+                free_ast(node);
+                free_ast(root);
+                return NULL;
+            }
+
+            root->children = new_children;
+            root->children[root->node_count] = node;
+            root->node_count++;
+        }
+    }
+
+    return root;
+}
+
+/* File */
 
 bool is_file(const char *source) {
     FILE *fptr = fopen(source, "r");
@@ -706,6 +924,7 @@ bool is_file(const char *source) {
         fclose(fptr);
         return false;
     }
+
     if (!S_ISREG(path_stat.st_mode)) {
         printf("No such file!.\n");
         fclose(fptr);
@@ -713,6 +932,7 @@ bool is_file(const char *source) {
     }
 
     const char *dot = strrchr(source, '.');
+
     if (!dot || strcmp(dot, ".s8") != 0) {
         printf("Extension must be .s8\n");
         fclose(fptr);
@@ -725,14 +945,17 @@ bool is_file(const char *source) {
 
 char *read(const char *source) {
     if (!is_file(source)) return NULL;
+
     FILE *fptr = fopen(source, "r");
     if (!fptr) return NULL;
 
     fseek(fptr, 0, SEEK_END);
+
     long length = ftell(fptr);
     rewind(fptr);
 
     char *buffer = (char*)malloc(length + 1);
+
     if (!buffer) {
         fclose(fptr);
         return NULL;
@@ -767,7 +990,8 @@ int main(int argc, char *argv[]) {
 
     if (strcmp(c, "help") == 0) {
         printf("Options:\n");
-        for (size_t i = 0; i < cmd_count; i++) printf("    %s - %s\n", cmd[i].key, cmd[i].des);
+        for (size_t i = 0; i < cmd_count; i++)
+            printf("    %s - %s\n", cmd[i].key, cmd[i].des);
         return 0;
     }
 
@@ -777,40 +1001,51 @@ int main(int argc, char *argv[]) {
     }
 
     char *buffer = read(c);
-    if (buffer == NULL) return 1;
+    if (!buffer) return 1;
 
-    Lexer lexer = { .source = buffer, .cursor = 0 };
+    Lexer lexer = {
+        .source = buffer,
+        .cursor = 0
+    };
+
     size_t token_count = 0;
     size_t capacity = 16;
 
     Token *tokens = (Token*)malloc(sizeof(Token) * capacity);
-    if (tokens == NULL) {
+
+    if (!tokens) {
         free(buffer);
         return 1;
     }
 
     while (true) {
         Token *token = get_next_token(&lexer);
-        if (token == NULL) break;
+        if (!token) break;
 
         if (token_count >= capacity) {
             capacity *= 2;
-            Token *new_tokens = (Token*)realloc(tokens, sizeof(Token) * capacity);
-            if (new_tokens == NULL) {
+            Token *new_tokens = (Token*)realloc(
+                tokens,
+                sizeof(Token) * capacity
+            );
+
+            if (!new_tokens) {
                 free(token->value);
                 free(token);
                 for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+
                 free(tokens);
                 free(buffer);
                 return 1;
             }
+
             tokens = new_tokens;
         }
 
         tokens[token_count] = *token;
         free(token);
-        token_count++;
 
+        token_count++;
         if (tokens[token_count - 1].type == TYPE_EOF) break;
     }
 
@@ -820,22 +1055,22 @@ int main(int argc, char *argv[]) {
         .count = token_count
     };
 
-    ASTNode *root = parse_expression(&p, 1);
-    if (root == NULL) {
+    ASTNode *root = parse_program(&p);
+
+    if (!root) {
         printf("Parse error\n");
         for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+
         free(tokens);
         free(buffer);
         return 1;
     }
 
-    int8_t result = evaluate(root);
-    printf("%d\n", result);
-
+    printf("Parse success\n");
     free_ast(root);
     for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+
     free(tokens);
     free(buffer);
-
     return 0;
 }
