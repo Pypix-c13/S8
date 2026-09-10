@@ -77,6 +77,7 @@ int main(int argc, char *argv[]) {
             printf("    %s - %s\n", cmd[i].key, cmd[i].des);
         }
     }
+    if(strcmp(c, "version") == 0) printf("Version: 1.0");
 
     return 0;
 }
