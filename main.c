@@ -1097,7 +1097,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Parse success\n");
     free_ast(root);
     for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
 
