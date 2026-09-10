@@ -1,0 +1,6 @@
+S8 v1.10 : First Feature
+Added :
+    - Basic variable system
+    - Basic return type
+    - Basic function system
+    - Int 8-bit and Hexadecimal
