@@ -258,84 +258,47 @@ ASTNode *parse_expression(Parser *p, int min_level) {
 }
 
 // ==========================================
-//                   Struct
+//                   Struct ****
 // ==========================================
 
-typedef struct MemoryNode {
-    char *label;
-    int8_t value;
-    struct MemoryNode **child;
-    size_t child_count;
-} MemoryNode;
+typedef struct Symbol {
+    char *name;
+    int8_t size;
+    int8_t offset;
 
-MemoryNode *memory_node(const char *label, uint32_t value) {
-    MemoryNode *node = (MemoryNode*)malloc(sizeof(MemoryNode));
-    if (node == NULL) return NULL;
-    node->label = (char*)malloc(strlen(label) + 1);
+    struct Symbol *parent;
+    struct Symbol *children;
+    struct Symbol *next;
+} Symbol;
 
-    if (node->label == NULL) {
-        free(node);
-        return NULL;
+Symbol *root_symbol() {
+    Symbol *sym = (Symbol *)malloc(sizeof(Symbol));
+    sym->name = NULL;
+    sym->size = 0;
+    sym->offset = 0;
+
+    sym->parent = NULL;
+    sym->children = NULL;
+    sym->next = NULL;
+    return sym;
+}
+
+Symbol *new_symbol(char *name, int8_t size, int8_t offset) {
+    Symbol *symbol = root_symbol();
+    symbol->name = name;
+    symbol->size = size;
+    symbol->offset = offset;
+    return symbol;
+}
+
+void add_symbol_child(Symbol *parent, Symbol *children) {
+    children->parent = parent;
+    if(parent->children == NULL) {
+        parent->children = children;
+        return;
     }
 
-    strcpy(node->label, label);
-    node->value = value;
-    node->child = NULL;
-
-    node->child_count = 0;
-    return node;
-}
-
-int add_child(MemoryNode *parent, MemoryNode *children) {
-    MemoryNode **new_children = (MemoryNode **)realloc(
-        parent->child,
-        sizeof(MemoryNode*) * (parent->child_count + 1)
-    );
-
-    if (new_children == NULL) return 0;
-    parent->child = new_children;
-
-    parent->child[parent->child_count] = children;
-    parent->child_count++;
-    return 1;
-}
-
-MemoryNode *find_child(MemoryNode *parent, const char *label) {
-    for (size_t i = 0; i < parent->child_count; i++) {
-        if (strcmp(parent->child[i]->label, label) == 0)
-            return parent->child[i];
-    }
-    return NULL;
-}
-
-MemoryNode *find_path(MemoryNode *root, const char **path, size_t count) {
-    MemoryNode *current = root;
-    for (size_t i = 0; i < count; i++) {
-        current = find_child(current, path[i]);
-        if (current == NULL) return NULL;
-    }
-    return current;
-}
-
-void free_memory(MemoryNode *node) {
-    if (node == NULL) return;
-    for (size_t i = 0; i < node->child_count; i++) free_memory(node->child[i]);
-
-    free(node->child);
-    free(node->label);
-    free(node);
-}
-
-ASTNode *parse_access(Parser *p) {
-    Token *root = current_t(p);
-    if (root->type != TYPE_ID) return NULL;
-    p->current++;
-
-    while (current_t(p)->type == TYPE_DOT) {
-        p->current++;
-        Token *member = current_t(p);
-        if (member->type != TYPE_ID) return NULL;
-        p->current++;
-    }
-    return NULL;
+    Symbol *c = parent->children;
+    while(c->next != NULL) c = c->next;
+    c->next = children;
 }
