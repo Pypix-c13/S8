@@ -485,10 +485,26 @@ ASTNode *parse_primary(Parser *p) {
     }
 
     if (tokens->type == TYPE_INT_LITERAL ||
-        tokens->type == TYPE_HEX_LITERAL ||
-        tokens->type == TYPE_ID) {
+        tokens->type == TYPE_HEX_LITERAL) {
         p->current++;
         return create_value_node(tokens);
+    }
+
+    if(tokens->type == TYPE_ID) {
+        p->current++;
+        ASTNode *node = create_value_node(tokens);
+        if (!node) return NULL;
+
+        if (match(p, TYPE_DOT)) {
+            Token *member = current_t(p);
+            if (member->type != TYPE_ID) {
+                free_ast(node);
+                return NULL;
+            }
+            p->current++;
+            return node;
+        }
+        return node;
     }
 
     return NULL;
@@ -880,7 +896,22 @@ ASTNode *parse_program(Parser *p) {
                 break;
 
             case TYPE_ID:
-                parse_function_call(p);
+                if (p->tokens[p->current + 1].type == TYPE_DOT) {
+                    node = parse_expression(p, 1);
+
+                    if (match(p, TYPE_EQUAL)) {
+                        ASTNode *value = parse_expression(p, 1);
+                        if (!value) {
+                            free_ast(node);
+                            free_ast(root);
+                            return NULL;
+                        }
+                        node->left = value;
+                    }
+                    consume(p, TYPE_SEMICOLON);
+                } else {
+                    parse_function_call(p);
+                }
                 break;
 
             default:
