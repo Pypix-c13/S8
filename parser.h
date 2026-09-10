@@ -257,8 +257,32 @@ ASTNode *parse_expression(Parser *p, int min_level) {
     return left;
 }
 
+int8_t evaluate(ASTNode *node) {
+    if(node == NULL) return 0;
+    if(node->type == AST_LITERAL) return convertInto8bit(node->value);
+
+    int8_t left = evaluate(node->left);
+    int8_t right = evaluate(node->right);
+
+    switch(node->op) {
+        case TYPE_PLUS: return left + right;
+        case TYPE_MIN: return left - right;
+        case TYPE_MUL: return left * right;
+        case TYPE_DIV:
+            if(right == 0) return 0;
+            return left / right;
+        case TYPE_BITWISE_AND: return left & right;
+        case TYPE_BITWISE_OR: return left | right;
+        case TYPE_BITWISE_XOR: return left ^ right;
+        case TYPE_UNARY: return ~left;
+        case TYPE_LSHIFT: return left << right;
+        case TYPE_RSHIFT: return left >> right;
+        default: return 0;
+    }
+}
+
 // ==========================================
-//                   Struct ****
+//                   Struct
 // ==========================================
 
 typedef struct Symbol {
