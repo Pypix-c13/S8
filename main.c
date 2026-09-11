@@ -1027,7 +1027,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(c, "version") == 0) {
-        printf("Version: 1.0\n");
+        printf("Version: 1.10\n");
         return 0;
     }
 
