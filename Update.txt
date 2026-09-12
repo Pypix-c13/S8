@@ -1,6 +1,12 @@
-S8 v1.10 : First Feature
+Release v1.10 : First Feature
 Added :
     - Basic variable system
     - Basic return type
     - Basic function system
     - Int 8-bit and Hexadecimal
+
+Release v1.2.12 : Refinement
+Added :
+    - Support global and local scope
+    - return type support function call and expression
+    - added re-assignment
