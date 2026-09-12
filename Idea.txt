@@ -1,9 +1,5 @@
 Idea untuk fitur berikutnya :
-- global and local scope
-- Re-assignment
 - More expression
-  - return can handle function call
   - function definition can handle recursion
-  - math expression support variable calculation (like x + 10)
   - function inside struct
 - Writing on memory
