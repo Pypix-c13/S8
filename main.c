@@ -253,7 +253,8 @@ int8_t convertInto8bit(const char *source) {
 typedef enum ASTNodeType {
     AST_ROOT, AST_NODE, AST_PARENT, AST_CHILDREN,
     AST_VAR, AST_FUNC, AST_RETURN, AST_STRUCT,
-    AST_LITERAL, AST_BINARY, AST_UNARY, AST_EXPRESSION
+    AST_LITERAL, AST_BINARY, AST_UNARY, AST_EXPRESSION,
+    AST_CALL
 } ASTNodeType;
 
 typedef struct ASTNode {
@@ -270,10 +271,13 @@ typedef struct ASTNode {
     size_t node_count;
 } ASTNode;
 
+typedef struct Function Function;
+
 typedef struct Parser {
     Token *tokens;
     size_t current;
     size_t count;
+    struct Function *function;
 } Parser;
 
 ASTNode *ast_root(void) {
@@ -333,7 +337,8 @@ ASTNode *ast_children(ASTNode *parent) {
 
 void free_ast(ASTNode *buffer) {
     if (!buffer) return;
-    for (size_t i = 0; i < buffer->node_count; i++) free_ast(buffer->children[i]);
+    for (size_t i = 0; i < buffer->node_count; i++) 
+        free_ast(buffer->children[i]);
 
     if (buffer->left) free_ast(buffer->left);
     if (buffer->right) free_ast(buffer->right);
@@ -348,7 +353,8 @@ Token *current_t(Parser *p) {
 }
 
 void consume(Parser *p, TokenType type) {
-    if (current_t(p)->type == type) p->current++;
+    if (current_t(p)->type == type) 
+        p->current++;
 }
 
 int match(Parser *p, TokenType type) {
@@ -356,7 +362,6 @@ int match(Parser *p, TokenType type) {
         p->current++;
         return 1;
     }
-
     return 0;
 }
 
@@ -370,11 +375,13 @@ typedef struct SymbolNode {
 
 typedef struct SymbolTable {
     SymbolNode *head;
+    struct SymbolTable *parent;
 } SymbolTable;
 
 SymbolTable *add_table(void) {
     SymbolTable *table = (SymbolTable*)malloc(sizeof(SymbolTable));
-    if (table) table->head = NULL;
+    table->head = NULL;
+    table->parent = NULL;
     return table;
 }
 
@@ -390,14 +397,18 @@ void add_variable(SymbolTable *table, const char *label, int8_t value) {
 }
 
 SymbolNode *lookup(SymbolTable *table, const char *label) {
-    if (!table) return NULL;
-    SymbolNode *current = table->head;
+    while (table != NULL) {
+        SymbolNode *current = table->head;
 
-    while (current != NULL) {
-        if (strcmp(current->label, label) == 0) return current;
-        current = current->next;
+        while (current != NULL) {
+            if (strcmp(current->label, label) == 0)
+                return current;
+
+            current = current->next;
+        }
+
+        table = table->parent;
     }
-
     return NULL;
 }
 
@@ -472,6 +483,8 @@ ASTNode *create_value_node(Token *tokens) {
     return node;
 }
 
+void parse_argument(Parser *p);
+
 ASTNode *parse_primary(Parser *p) {
     Token *tokens = current_t(p);
 
@@ -490,10 +503,19 @@ ASTNode *parse_primary(Parser *p) {
         return create_value_node(tokens);
     }
 
-    if(tokens->type == TYPE_ID) {
+    if (tokens->type == TYPE_ID) {
         p->current++;
         ASTNode *node = create_value_node(tokens);
         if (!node) return NULL;
+
+        if (current_t(p)->type == TYPE_LPAREN) {
+            node->type = AST_CALL;
+            p->current++;
+
+            if (current_t(p)->type != TYPE_RPAREN) parse_argument(p);
+            consume(p, TYPE_RPAREN);
+            return node;
+        }
 
         if (match(p, TYPE_DOT)) {
             Token *member = current_t(p);
@@ -501,9 +523,11 @@ ASTNode *parse_primary(Parser *p) {
                 free_ast(node);
                 return NULL;
             }
+
             p->current++;
             return node;
         }
+
         return node;
     }
 
@@ -531,13 +555,23 @@ ASTNode *parse_expression(Parser *p, int min_level) {
     return left;
 }
 
-int8_t evaluate(ASTNode *node) {
-    if (!node) return 0;
-    if (node->type == AST_LITERAL) return convertInto8bit(node->value);
-    if (node->op == TYPE_UNARY) return ~evaluate(node->left);
+int8_t execute_function_call(ASTNode *node, SymbolTable *table, Function *functions);
 
-    int8_t left = evaluate(node->left);
-    int8_t right = evaluate(node->right);
+int8_t evaluate(ASTNode *node, SymbolTable *table, Function *functions) {
+    if (!node) return 0;
+
+    if (node->type == AST_CALL)
+        return execute_function_call(node, table, functions);
+
+    if (node->type == AST_LITERAL) {
+        SymbolNode *symbol = lookup(table, node->value);
+        if (symbol != NULL) return symbol->value;
+        return convertInto8bit(node->value);
+    }
+
+    if (node->op == TYPE_UNARY) return ~evaluate(node->left, table, functions);
+    int8_t left = evaluate(node->left, table, functions);
+    int8_t right = evaluate(node->right, table, functions);
 
     switch (node->op) {
         case TYPE_PLUS: return left + right;
@@ -617,6 +651,8 @@ typedef struct Function {
     Parameter *param;
     size_t param_count;
     struct Function *next;
+    ASTNode *return_node;
+    ASTNode *body;
 } Function;
 
 Parameter *new_param(char *name) {
@@ -638,12 +674,30 @@ Function *add_function(char *name) {
     func->param = NULL;
     func->param_count = 0;
     func->next = NULL;
+    func->return_node = NULL;
+    func->body = NULL;
 
     return func;
 }
 
+Function *lookup_function(Function *functions, char *name) {
+    while (functions != NULL) {
+        if (strcmp(functions->name, name) == 0) return functions;
+        functions = functions->next;
+    }
+    return NULL;
+}
+
+int8_t execute_function_call(ASTNode *node, SymbolTable *table, Function *functions) {
+    Function *function = lookup_function(functions, node->value);
+    if (!function) return 0;
+    if (!function->return_node) return 0;
+    return evaluate(function->return_node->left, table, functions);
+}
+
 void add_parameter(Function *function, Parameter *param) {
     if (!function || !param) return;
+    
     if (function->param == NULL) {
         function->param = param;
         function->param_count++;
@@ -668,14 +722,12 @@ void bind_arguments(Function *function, int8_t *arguments, size_t count) {
 }
 
 Parameter *lookup_parameter(Function *function, char *name) {
-    if (!function || !name) return NULL;
-    Parameter *current = function->param;
+    Parameter *param = function ? function->param : NULL;
 
-    while (current != NULL) {
-        if (strcmp(current->name, name) == 0) return current;
-        current = current->next;
+    while (param != NULL) {
+        if (strcmp(param->name, name) == 0) return param;
+        param = param->next;
     }
-
     return NULL;
 }
 
@@ -715,6 +767,33 @@ ASTNode *parse_int(Parser *p) {
 
     free_ast(node);
     return NULL;
+}
+
+ASTNode *parse_assignment(Parser *p) {
+    Token *id = current_t(p);
+
+    if (id->type != TYPE_ID) return NULL;
+    p->current++;
+
+    if (!match(p, TYPE_EQUAL))
+        return NULL;
+
+    ASTNode *node = ast_root();
+    if (!node) return NULL;
+
+    node->type = AST_VAR;
+    node->value = dup_string(id->value);
+
+    ASTNode *expr = parse_expression(p, 1);
+    if (!expr) {
+        free_ast(node);
+        return NULL;
+    }
+
+    node->left = expr;
+    consume(p, TYPE_SEMICOLON);
+
+    return node;
 }
 
 ASTNode *parse_return(Parser *p) {
@@ -805,16 +884,22 @@ Parameter *parse_param(Parser *p) {
     return new_param(name->value);
 }
 
-void parse_body(Parser *p) {
+void parse_body(Parser *p, SymbolTable *local, Function *function) {
     while (current_t(p)->type != TYPE_RBRACE &&
            current_t(p)->type != TYPE_EOF) {
         switch (current_t(p)->type) {
             case TYPE_INT:
-                parse_int(p);
+                ASTNode *node = parse_int(p);
+                if (node) {
+                    int8_t value = 0;
+                    if (node->left) value = evaluate(node->left, local, p->function);
+                    add_variable(local, node->value, value);
+                    free_ast(node);
+                }
                 break;
 
             case TYPE_RETURN:
-                parse_return(p);
+                function->return_node = parse_return(p);
                 break;
 
             default:
@@ -824,7 +909,7 @@ void parse_body(Parser *p) {
     }
 }
 
-Function *parse_function(Parser *p) {
+Function *parse_function(Parser *p, SymbolTable *global) {
     if (!match(p, TYPE_FUNCTION)) return NULL;
 
     Token *name = current_t(p);
@@ -833,6 +918,11 @@ Function *parse_function(Parser *p) {
 
     Function *function = add_function(name->value);
     if (!function) return NULL;
+
+    SymbolTable *local = add_table();
+    if(!local) return NULL;
+    local->parent = global;
+
     if (!match(p, TYPE_LPAREN)) return NULL;
 
     if (current_t(p)->type != TYPE_RPAREN) {
@@ -840,6 +930,8 @@ Function *parse_function(Parser *p) {
             Parameter *param = parse_param(p);
             if (!param) return NULL;
             add_parameter(function, param);
+
+            add_variable(local, param->name, param->value);
             if (!match(p, TYPE_COMMA)) break;
         }
     }
@@ -847,7 +939,7 @@ Function *parse_function(Parser *p) {
     if (!match(p, TYPE_RPAREN)) return NULL;
     if (!match(p, TYPE_LBRACE)) return NULL;
 
-    parse_body(p);
+    parse_body(p, local, function);
 
     if (!match(p, TYPE_RBRACE)) return NULL;
     return function;
@@ -855,7 +947,8 @@ Function *parse_function(Parser *p) {
 
 void parse_argument(Parser *p) {
     parse_expression(p, 1);
-    while (match(p, TYPE_COMMA)) parse_expression(p, 1);
+    while (match(p, TYPE_COMMA)) 
+        parse_expression(p, 1);
 }
 
 void parse_function_call(Parser *p) {
@@ -868,7 +961,7 @@ void parse_function_call(Parser *p) {
     consume(p, TYPE_SEMICOLON);
 }
 
-ASTNode *parse_program(Parser *p) {
+ASTNode *parse_program(Parser *p, SymbolTable *global) {
     ASTNode *root = ast_root();
     if (!root) return NULL;
 
@@ -877,7 +970,13 @@ ASTNode *parse_program(Parser *p) {
 
         switch (current_t(p)->type) {
             case TYPE_INT:
-                node = parse_int(p);
+                ASTNode *node = parse_int(p);
+                if (node) {
+                    int8_t value = 0;
+                    if (node->left) value = evaluate(node->left, global, p->function);
+                    add_variable(global, node->value, value);
+                    free_ast(node);
+                }
                 break;
 
             case TYPE_STRUCT:
@@ -889,25 +988,34 @@ ASTNode *parse_program(Parser *p) {
                 break;
 
             case TYPE_FUNCTION:
-                if (!parse_function(p)) {
+                Function *function = parse_function(p, global);
+                if (!function) {
                     free_ast(root);
                     return NULL;
                 }
+
+                function->next = p->function;
+                p->function = function;
                 break;
 
             case TYPE_ID:
-                if (p->tokens[p->current + 1].type == TYPE_DOT) {
+                if (p->tokens[p->current + 1].type == TYPE_EQUAL) {
+                    node = parse_assignment(p);
+                } else if (p->tokens[p->current + 1].type == TYPE_DOT) {
                     node = parse_expression(p, 1);
 
                     if (match(p, TYPE_EQUAL)) {
                         ASTNode *value = parse_expression(p, 1);
+
                         if (!value) {
                             free_ast(node);
                             free_ast(root);
                             return NULL;
                         }
+
                         node->left = value;
                     }
+
                     consume(p, TYPE_SEMICOLON);
                 } else {
                     parse_function_call(p);
@@ -941,6 +1049,32 @@ ASTNode *parse_program(Parser *p) {
     return root;
 }
 
+void execute_variables(ASTNode *root, SymbolTable *table, Function *function) {
+    if (!root || !table) return;
+
+    for (size_t i = 0; i < root->node_count; i++) {
+        ASTNode *node = root->children[i];
+
+        if (node->type != AST_VAR)
+            continue;
+
+        if (node->left == NULL) {
+            if (lookup(table, node->value) == NULL)
+                add_variable(table, node->value, 0);
+
+            continue;
+        }
+
+        int8_t value = evaluate(node->left, table, function);
+        SymbolNode *symbol = lookup(table, node->value);
+
+        if (symbol == NULL)
+            add_variable(table, node->value, value);
+        else
+            update_var(table, node->value, value);
+    }
+}
+
 /* File */
 
 bool is_file(const char *source) {
@@ -963,7 +1097,6 @@ bool is_file(const char *source) {
     }
 
     const char *dot = strrchr(source, '.');
-
     if (!dot || strcmp(dot, ".s8") != 0) {
         printf("Extension must be .s8\n");
         fclose(fptr);
@@ -981,12 +1114,10 @@ char *read(const char *source) {
     if (!fptr) return NULL;
 
     fseek(fptr, 0, SEEK_END);
-
     long length = ftell(fptr);
     rewind(fptr);
 
     char *buffer = (char*)malloc(length + 1);
-
     if (!buffer) {
         fclose(fptr);
         return NULL;
@@ -1010,6 +1141,20 @@ const CommandLine cmd[] = {
 };
 
 const size_t cmd_count = sizeof(cmd) / sizeof(cmd[0]);
+
+void free_table(SymbolTable *table) {
+    if (!table) return;
+
+    SymbolNode *current = table->head;
+    while (current != NULL) {
+        SymbolNode *next = current->next;
+        free(current->label);
+        free(current);
+        current = next;
+    }
+
+    free(table);
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -1041,7 +1186,6 @@ int main(int argc, char *argv[]) {
 
     size_t token_count = 0;
     size_t capacity = 16;
-
     Token *tokens = (Token*)malloc(sizeof(Token) * capacity);
 
     if (!tokens) {
@@ -1063,7 +1207,8 @@ int main(int argc, char *argv[]) {
             if (!new_tokens) {
                 free(token->value);
                 free(token);
-                for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+                for (size_t i = 0; i < token_count; i++) 
+                    free(tokens[i].value);
 
                 free(tokens);
                 free(buffer);
@@ -1083,20 +1228,38 @@ int main(int argc, char *argv[]) {
     Parser p = {
         .tokens = tokens,
         .current = 0,
-        .count = token_count
+        .count = token_count,
+        .function = NULL
     };
 
-    ASTNode *root = parse_program(&p);
+    SymbolTable *global = add_table();
+    ASTNode *root = parse_program(&p, global);
 
     if (!root) {
         printf("Parse error\n");
-        for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+        for (size_t i = 0; i < token_count; i++) 
+            free(tokens[i].value);
 
         free(tokens);
         free(buffer);
         return 1;
     }
 
+    SymbolTable *table = add_table();
+    if (!table) {
+        free_ast(root);
+        for (size_t i = 0; i < token_count; i++) 
+            free(tokens[i].value);
+            
+        free(tokens);
+        free(buffer);
+        return 1;
+    }
+
+    execute_variables(root, table, p.function);
+    free_table(table);
+
+    free_table(global);
     free_ast(root);
     for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
 
