@@ -10,3 +10,8 @@ Added :
     - Support global and local scope
     - return type support function call and expression
     - added re-assignment
+
+Release v1.3.12 : Improvisation
+Added :
+    - variable type support function call
+    - simple error handling
