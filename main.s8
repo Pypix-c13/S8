@@ -1,14 +1,11 @@
-struct Pointer {
-    int address;
-    int value;
+int a = 10;
+int b = 10 + 0x20;
+int c = a + b;
+int d = c & c;
+
+func add(int x) {
+    return x << d;
 }
 
-func add(int address, int value) {
-    Pointer.address = address;
-    Pointer.value = value;
-    return Pointer.address << Pointer.value;
-}
-
-func main() {
-    return add(1000, 4) << 0x40;
-}
+int on_add = add(c);
+return on_add;

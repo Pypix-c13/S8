@@ -1,5 +1,4 @@
 Idea untuk fitur berikutnya :
 - More expression
-  - function definition can handle recursion
   - function inside struct
 - Writing on memory

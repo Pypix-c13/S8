@@ -17,6 +17,11 @@ static char *dup_string(const char *source) {
     return copy;
 }
 
+static void error(const char *message) {
+    printf("Error: %s\n", message);
+    exit(1);
+}
+
 typedef enum TokenType {
     TYPE_INT, TYPE_FUNCTION, TYPE_RETURN, TYPE_STRUCT,
     TYPE_LBRACE, TYPE_RBRACE, TYPE_LPAREN, TYPE_RPAREN,
@@ -228,7 +233,8 @@ Token *get_next_token(Lexer *lexer) {
     }
 
     lexer->cursor++;
-    return tokens;
+    error("unknown character");
+    return NULL;
 }
 
 int8_t convertInto8bit(const char *source) {
@@ -353,8 +359,10 @@ Token *current_t(Parser *p) {
 }
 
 void consume(Parser *p, TokenType type) {
-    if (current_t(p)->type == type) 
-        p->current++;
+    if (current_t(p)->type != type)
+        error("unexpected token");
+
+    p->current++;
 }
 
 int match(Parser *p, TokenType type) {
@@ -483,7 +491,7 @@ ASTNode *create_value_node(Token *tokens) {
     return node;
 }
 
-void parse_argument(Parser *p);
+void parse_argument(Parser *p, ASTNode *call);
 
 ASTNode *parse_primary(Parser *p) {
     Token *tokens = current_t(p);
@@ -512,7 +520,7 @@ ASTNode *parse_primary(Parser *p) {
             node->type = AST_CALL;
             p->current++;
 
-            if (current_t(p)->type != TYPE_RPAREN) parse_argument(p);
+            if (current_t(p)->type != TYPE_RPAREN) parse_argument(p, node);
             consume(p, TYPE_RPAREN);
             return node;
         }
@@ -521,7 +529,7 @@ ASTNode *parse_primary(Parser *p) {
             Token *member = current_t(p);
             if (member->type != TYPE_ID) {
                 free_ast(node);
-                return NULL;
+                error("expected member name after dot");
             }
 
             p->current++;
@@ -653,6 +661,7 @@ typedef struct Function {
     struct Function *next;
     ASTNode *return_node;
     ASTNode *body;
+    bool executing;
 } Function;
 
 Parameter *new_param(char *name) {
@@ -676,6 +685,7 @@ Function *add_function(char *name) {
     func->next = NULL;
     func->return_node = NULL;
     func->body = NULL;
+    func->executing = false;
 
     return func;
 }
@@ -691,8 +701,49 @@ Function *lookup_function(Function *functions, char *name) {
 int8_t execute_function_call(ASTNode *node, SymbolTable *table, Function *functions) {
     Function *function = lookup_function(functions, node->value);
     if (!function) return 0;
-    if (!function->return_node) return 0;
-    return evaluate(function->return_node->left, table, functions);
+
+    if (!function->body) return 0;
+
+    if (function->executing) {
+        printf("Runtime error: recursion is not supported\n");
+        return 0;
+    }
+
+    function->executing = true;
+
+    SymbolTable local = {0};
+    local.parent = table;
+
+    for (size_t i = 0; i < node->node_count; i++) {
+        ASTNode *argument = node->children[i];
+        int8_t value = evaluate(argument, table, functions);
+
+        Parameter *param = function->param;
+        for (size_t j = 0; j < i && param != NULL; j++)
+            param = param->next;
+
+        if (param != NULL)
+            add_variable(&local, param->name, value);
+    }
+
+    for (size_t i = 0; i < function->body->node_count; i++) {
+        ASTNode *statement = function->body->children[i];
+
+        if (statement->type == AST_VAR) {
+            int8_t value = 0;
+            if (statement->left) value = evaluate(statement->left, &local, functions);
+            add_variable(&local, statement->value, value);
+        }
+
+        if (statement->type == AST_RETURN) {
+            int8_t result = evaluate(statement->left, &local, functions);
+            function->executing = false;
+            return result;
+        }
+    }
+
+    function->executing = false;
+    return 0;
 }
 
 void add_parameter(Function *function, Parameter *param) {
@@ -713,11 +764,11 @@ void add_parameter(Function *function, Parameter *param) {
 
 void bind_arguments(Function *function, int8_t *arguments, size_t count) {
     if (!function) return;
-    Parameter *current = function->param;
+    Parameter *param = function->param;
 
-    for (size_t i = 0; i < count && current != NULL; i++) {
-        current->value = arguments[i];
-        current = current->next;
+    for (size_t i = 0; i < count && param != NULL; i++) {
+        param->value = arguments[i];
+        param = param->next;
     }
 }
 
@@ -766,17 +817,19 @@ ASTNode *parse_int(Parser *p) {
     }
 
     free_ast(node);
+    error("expected '=' or ';' after variable name");
     return NULL;
 }
 
 ASTNode *parse_assignment(Parser *p) {
     Token *id = current_t(p);
 
-    if (id->type != TYPE_ID) return NULL;
+    if (id->type != TYPE_ID)
+        error("expected identifier in assignment");
     p->current++;
 
     if (!match(p, TYPE_EQUAL))
-        return NULL;
+        error("expected '=' in assignment");
 
     ASTNode *node = ast_root();
     if (!node) return NULL;
@@ -787,7 +840,7 @@ ASTNode *parse_assignment(Parser *p) {
     ASTNode *expr = parse_expression(p, 1);
     if (!expr) {
         free_ast(node);
-        return NULL;
+        error("expected expression after return");
     }
 
     node->left = expr;
@@ -819,7 +872,8 @@ ASTNode *parse_struct(Parser *p) {
     consume(p, TYPE_STRUCT);
     Token *id = current_t(p);
 
-    if (id->type != TYPE_ID) return NULL;
+    if (id->type != TYPE_ID)
+        error("expected identifier after int");
     p->current++;
 
     ASTNode *node = ast_root();
@@ -830,7 +884,7 @@ ASTNode *parse_struct(Parser *p) {
 
     if (!match(p, TYPE_LBRACE)) {
         free_ast(node);
-        return NULL;
+        error("expected '{' after struct name");
     }
 
     while (current_t(p)->type != TYPE_RBRACE &&
@@ -867,7 +921,7 @@ ASTNode *parse_struct(Parser *p) {
 
     if (!match(p, TYPE_RBRACE)) {
         free_ast(node);
-        return NULL;
+        error("expected '}' after struct body");
     }
 
     return node;
@@ -884,27 +938,68 @@ Parameter *parse_param(Parser *p) {
     return new_param(name->value);
 }
 
-void parse_body(Parser *p, SymbolTable *local, Function *function) {
+// void parse_body(Parser *p, SymbolTable *local, Function *function) {
+//     while (current_t(p)->type != TYPE_RBRACE &&
+//            current_t(p)->type != TYPE_EOF) {
+//         switch (current_t(p)->type) {
+//             case TYPE_INT:
+//                 ASTNode *node = parse_int(p);
+//                 if (node) {
+//                     int8_t value = 0;
+//                     if (node->left) value = evaluate(node->left, local, p->function);
+//                     add_variable(local, node->value, value);
+//                     free_ast(node);
+//                 }
+//                 break;
+
+//             case TYPE_RETURN:
+//                 function->return_node = parse_return(p);
+//                 break;
+
+//             default:
+//                 p->current++;
+//                 break;
+//         }
+//     }
+// }
+
+void parse_body(Parser *p, Function *function) {
+    function->body = ast_root();
+    if (!function->body) return;
+
     while (current_t(p)->type != TYPE_RBRACE &&
            current_t(p)->type != TYPE_EOF) {
+        ASTNode *node = NULL;
+
         switch (current_t(p)->type) {
             case TYPE_INT:
-                ASTNode *node = parse_int(p);
-                if (node) {
-                    int8_t value = 0;
-                    if (node->left) value = evaluate(node->left, local, p->function);
-                    add_variable(local, node->value, value);
-                    free_ast(node);
-                }
+                node = parse_int(p);
                 break;
 
             case TYPE_RETURN:
-                function->return_node = parse_return(p);
+                node = parse_return(p);
                 break;
 
             default:
-                p->current++;
-                break;
+                error("unexpected token in function body");
+        }
+
+        if (node) {
+            node->parent = function->body;
+
+            ASTNode **new_children = (ASTNode**)realloc(
+                function->body->children,
+                sizeof(ASTNode*) * (function->body->node_count + 1)
+            );
+
+            if (!new_children) {
+                free_ast(node);
+                return;
+            }
+
+            function->body->children = new_children;
+            function->body->children[function->body->node_count] = node;
+            function->body->node_count++;
         }
     }
 }
@@ -913,7 +1008,8 @@ Function *parse_function(Parser *p, SymbolTable *global) {
     if (!match(p, TYPE_FUNCTION)) return NULL;
 
     Token *name = current_t(p);
-    if (name->type != TYPE_ID) return NULL;
+    if (name->type != TYPE_ID)
+        error("expected function name");
     p->current++;
 
     Function *function = add_function(name->value);
@@ -923,12 +1019,13 @@ Function *parse_function(Parser *p, SymbolTable *global) {
     if(!local) return NULL;
     local->parent = global;
 
-    if (!match(p, TYPE_LPAREN)) return NULL;
+    if (!match(p, TYPE_LPAREN))
+        error("expected '(' after function name");
 
     if (current_t(p)->type != TYPE_RPAREN) {
         while (true) {
             Parameter *param = parse_param(p);
-            if (!param) return NULL;
+            if (!param) error("invalid function parameter");
             add_parameter(function, param);
 
             add_variable(local, param->name, param->value);
@@ -936,26 +1033,65 @@ Function *parse_function(Parser *p, SymbolTable *global) {
         }
     }
 
-    if (!match(p, TYPE_RPAREN)) return NULL;
-    if (!match(p, TYPE_LBRACE)) return NULL;
+    if (!match(p, TYPE_RPAREN))
+        error("expected ')' after function parameters");
+    if (!match(p, TYPE_LBRACE))
+        error("expected '{' before function body");
 
-    parse_body(p, local, function);
+    parse_body(p, function);
 
-    if (!match(p, TYPE_RBRACE)) return NULL;
+    if (!match(p, TYPE_RBRACE))
+        error("expected '}' after function body");
     return function;
 }
 
-void parse_argument(Parser *p) {
-    parse_expression(p, 1);
-    while (match(p, TYPE_COMMA)) 
-        parse_expression(p, 1);
+void parse_argument(Parser *p, ASTNode *call) {
+    ASTNode *argument = parse_expression(p, 1);
+    if (!argument) return;
+
+    ASTNode **new_children = (ASTNode**)realloc(
+        call->children,
+        sizeof(ASTNode*) * (call->node_count + 1)
+    );
+
+    if (!new_children) {
+        free_ast(argument);
+        return;
+    }
+
+    call->children = new_children;
+    call->children[call->node_count] = argument;
+    call->node_count++;
+
+    while (match(p, TYPE_COMMA)) {
+        argument = parse_expression(p, 1);
+        if (!argument) return;
+
+        new_children = (ASTNode**)realloc(
+            call->children,
+            sizeof(ASTNode*) * (call->node_count + 1)
+        );
+
+        if (!new_children) {
+            free_ast(argument);
+            return;
+        }
+
+        call->children = new_children;
+        call->children[call->node_count] = argument;
+        call->node_count++;
+    }
 }
 
 void parse_function_call(Parser *p) {
     consume(p, TYPE_ID);
     consume(p, TYPE_LPAREN);
 
-    parse_argument(p);
+    while (current_t(p)->type != TYPE_RPAREN &&
+           current_t(p)->type != TYPE_EOF) {
+        parse_expression(p, 1);
+        if (!match(p, TYPE_COMMA)) break;
+    }
 
     consume(p, TYPE_RPAREN);
     consume(p, TYPE_SEMICOLON);
@@ -1247,16 +1383,15 @@ int main(int argc, char *argv[]) {
 
     SymbolTable *table = add_table();
     if (!table) {
-        free_ast(root);
-        for (size_t i = 0; i < token_count; i++) 
-            free(tokens[i].value);
-            
+        printf("Parse error\n");
+        for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+
         free(tokens);
         free(buffer);
         return 1;
     }
 
-    execute_variables(root, table, p.function);
+    execute_variables(root, global, p.function);
     free_table(table);
 
     free_table(global);
