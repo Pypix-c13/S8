@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <sys/stat.h>
 
+int8_t *memory;
+
 static char *dup_string(const char *source) {
     if (!source) return NULL;
 
@@ -343,7 +345,7 @@ ASTNode *ast_children(ASTNode *parent) {
 
 void free_ast(ASTNode *buffer) {
     if (!buffer) return;
-    for (size_t i = 0; i < buffer->node_count; i++) 
+    for (size_t i = 0; i < buffer->node_count; i++)
         free_ast(buffer->children[i]);
 
     if (buffer->left) free_ast(buffer->left);
@@ -370,6 +372,7 @@ int match(Parser *p, TokenType type) {
         p->current++;
         return 1;
     }
+
     return 0;
 }
 
@@ -417,6 +420,7 @@ SymbolNode *lookup(SymbolTable *table, const char *label) {
 
         table = table->parent;
     }
+
     return NULL;
 }
 
@@ -453,6 +457,7 @@ int getLevel(TokenType type) {
     for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); i++) {
         if (levels[i].type == type) return levels[i].level;
     }
+
     return 0;
 }
 
@@ -565,6 +570,25 @@ ASTNode *parse_expression(Parser *p, int min_level) {
 
 int8_t execute_function_call(ASTNode *node, SymbolTable *table, Function *functions);
 
+int8_t register_memory(uint8_t address) {
+    int8_t value = memory[address];
+    // printf("READ [%02X] = %d\n", address, value);
+    return memory[address];
+}
+
+void write_memory(uint8_t address, int8_t value) {
+    // printf("WRITE [%02X] = %d\n", address, value);
+    memory[address] = value;
+}
+
+bool is_bitwise(TokenType op) {
+    return op == TYPE_BITWISE_AND ||
+           op == TYPE_BITWISE_OR ||
+           op == TYPE_BITWISE_XOR ||
+           op == TYPE_LSHIFT ||
+           op == TYPE_RSHIFT;
+}
+
 int8_t evaluate(ASTNode *node, SymbolTable *table, Function *functions) {
     if (!node) return 0;
 
@@ -580,6 +604,38 @@ int8_t evaluate(ASTNode *node, SymbolTable *table, Function *functions) {
     if (node->op == TYPE_UNARY) return ~evaluate(node->left, table, functions);
     int8_t left = evaluate(node->left, table, functions);
     int8_t right = evaluate(node->right, table, functions);
+
+    switch (node->op) {
+        case TYPE_PLUS: return left + right;
+        case TYPE_MIN: return left - right;
+        case TYPE_MUL: return left * right;
+        case TYPE_DIV: return (right == 0) ? 0 : left / right;
+        case TYPE_BITWISE_AND: return left & right;
+        case TYPE_BITWISE_OR: return left | right;
+        case TYPE_BITWISE_XOR: return left ^ right;
+        case TYPE_LSHIFT: return left << right;
+        case TYPE_RSHIFT: return left >> right;
+        default: return 0;
+    }
+}
+
+int8_t evaluate_memory(ASTNode *node, SymbolTable *table, Function *function, const char *target) {
+    if(!node) return 0;
+
+    if (node->type == AST_LITERAL) {
+        if (strcmp(node->value, target) == 0) {
+            SymbolNode *symbol = lookup(table, target);
+            if (symbol != NULL) return register_memory((uint8_t)symbol->value);
+        }
+
+        SymbolNode *symbol = lookup(table, node->value);
+        if (symbol != NULL) return symbol->value;
+        return convertInto8bit(node->value);
+    }
+
+    if (node->op == TYPE_UNARY) return ~evaluate_memory(node->left, table, function, target);
+    int8_t left = evaluate_memory(node->left, table, function, target);
+    int8_t right = evaluate_memory(node->right, table, function, target);
 
     switch (node->op) {
         case TYPE_PLUS: return left + right;
@@ -695,6 +751,7 @@ Function *lookup_function(Function *functions, char *name) {
         if (strcmp(functions->name, name) == 0) return functions;
         functions = functions->next;
     }
+
     return NULL;
 }
 
@@ -748,7 +805,7 @@ int8_t execute_function_call(ASTNode *node, SymbolTable *table, Function *functi
 
 void add_parameter(Function *function, Parameter *param) {
     if (!function || !param) return;
-    
+
     if (function->param == NULL) {
         function->param = param;
         function->param_count++;
@@ -779,6 +836,7 @@ Parameter *lookup_parameter(Function *function, char *name) {
         if (strcmp(param->name, name) == 0) return param;
         param = param->next;
     }
+
     return NULL;
 }
 
@@ -923,6 +981,9 @@ ASTNode *parse_struct(Parser *p) {
         free_ast(node);
         error("expected '}' after struct body");
     }
+
+    if (!match(p, TYPE_SEMICOLON))
+        error("expected ';' after struct");
 
     return node;
 }
@@ -1106,13 +1167,7 @@ ASTNode *parse_program(Parser *p, SymbolTable *global) {
 
         switch (current_t(p)->type) {
             case TYPE_INT:
-                ASTNode *node = parse_int(p);
-                if (node) {
-                    int8_t value = 0;
-                    if (node->left) value = evaluate(node->left, global, p->function);
-                    add_variable(global, node->value, value);
-                    free_ast(node);
-                }
+                node = parse_int(p);
                 break;
 
             case TYPE_STRUCT:
@@ -1187,27 +1242,33 @@ ASTNode *parse_program(Parser *p, SymbolTable *global) {
 
 void execute_variables(ASTNode *root, SymbolTable *table, Function *function) {
     if (!root || !table) return;
-
     for (size_t i = 0; i < root->node_count; i++) {
         ASTNode *node = root->children[i];
-
-        if (node->type != AST_VAR)
-            continue;
+        if (node->type != AST_VAR) continue;
 
         if (node->left == NULL) {
-            if (lookup(table, node->value) == NULL)
-                add_variable(table, node->value, 0);
-
+            if (lookup(table, node->value) == NULL) add_variable(table, node->value, 0);
             continue;
         }
 
-        int8_t value = evaluate(node->left, table, function);
         SymbolNode *symbol = lookup(table, node->value);
 
-        if (symbol == NULL)
+        if (symbol == NULL) {
+            int8_t value = evaluate(node->left, table, function);
             add_variable(table, node->value, value);
-        else
-            update_var(table, node->value, value);
+            continue;
+        }
+
+        if (node->left->type == AST_BINARY &&
+            is_bitwise(node->left->op)) {
+                uint8_t address = (uint8_t)symbol->value;
+                int8_t value = evaluate_memory(node->left, table, function, node->value);
+                write_memory(address, value);
+                continue;
+        }
+
+        int8_t value = evaluate(node->left, table, function);
+        update_var(table, node->value, value);
     }
 }
 
@@ -1293,8 +1354,16 @@ void free_table(SymbolTable *table) {
 }
 
 int main(int argc, char *argv[]) {
+    memory = malloc(256);
+
+    if (!memory) {
+        printf("Memory allocation failed\n");
+        return 1;
+    }
+
     if (argc < 2) {
         printf("usage: seight [file_or_options]\n");
+        free(memory);
         return 1;
     }
 
@@ -1304,16 +1373,22 @@ int main(int argc, char *argv[]) {
         printf("Options:\n");
         for (size_t i = 0; i < cmd_count; i++)
             printf("    %s - %s\n", cmd[i].key, cmd[i].des);
+
+        free(memory);
         return 0;
     }
 
     if (strcmp(c, "version") == 0) {
         printf("Version: 1.10\n");
+        free(memory);
         return 0;
     }
 
     char *buffer = read(c);
-    if (!buffer) return 1;
+    if (!buffer) {
+        free(memory);
+        return 1;
+    }
 
     Lexer lexer = {
         .source = buffer,
@@ -1326,6 +1401,7 @@ int main(int argc, char *argv[]) {
 
     if (!tokens) {
         free(buffer);
+        free(memory);
         return 1;
     }
 
@@ -1343,11 +1419,12 @@ int main(int argc, char *argv[]) {
             if (!new_tokens) {
                 free(token->value);
                 free(token);
-                for (size_t i = 0; i < token_count; i++) 
+                for (size_t i = 0; i < token_count; i++)
                     free(tokens[i].value);
 
                 free(tokens);
                 free(buffer);
+                free(memory);
                 return 1;
             }
 
@@ -1373,11 +1450,12 @@ int main(int argc, char *argv[]) {
 
     if (!root) {
         printf("Parse error\n");
-        for (size_t i = 0; i < token_count; i++) 
+        for (size_t i = 0; i < token_count; i++)
             free(tokens[i].value);
 
         free(tokens);
         free(buffer);
+        free(memory);
         return 1;
     }
 
@@ -1388,6 +1466,7 @@ int main(int argc, char *argv[]) {
 
         free(tokens);
         free(buffer);
+        free(memory);
         return 1;
     }
 
@@ -1396,9 +1475,12 @@ int main(int argc, char *argv[]) {
 
     free_table(global);
     free_ast(root);
-    for (size_t i = 0; i < token_count; i++) free(tokens[i].value);
+    for (size_t i = 0; i < token_count; i++)
+        free(tokens[i].value);
 
     free(tokens);
     free(buffer);
+
+    free(memory);
     return 0;
 }
