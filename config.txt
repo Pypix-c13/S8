@@ -1,6 +1,0 @@
-main.c
-main.s8
-.gitignore
-Design.txt
-README.md
-Update.txt
