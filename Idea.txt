@@ -1,4 +1,0 @@
-Idea untuk fitur berikutnya :
-- More expression
-  - function inside struct
-- Writing on memory
